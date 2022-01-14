@@ -3,6 +3,7 @@ import {
 	Button,
 	chakra,
 	Container,
+	Divider,
 	Drawer,
 	DrawerBody,
 	DrawerCloseButton,
@@ -11,12 +12,14 @@ import {
 	DrawerOverlay,
 	Flex,
 	FormControl,
+	FormErrorMessage,
 	Heading,
 	HStack,
 	Icon,
 	IconButton,
 	Input,
 	InputGroup,
+	InputLeftAddon,
 	InputRightAddon,
 	Modal,
 	ModalBody,
@@ -37,6 +40,7 @@ import { nanoid } from 'nanoid'
 import { useState } from 'react'
 import DayPicker from 'react-day-picker'
 import 'react-day-picker/lib/style.css'
+import { useForm } from 'react-hook-form'
 import {
 	FiCalendar,
 	FiChevronLeft,
@@ -186,7 +190,7 @@ const Home = () => {
 								}}
 							/>
 						</HStack>
-						<VStack alignItems='stretch'>
+						<VStack alignItems='stretch' divider={<Divider />} spacing='4'>
 							{state.persons.map((p) => (
 								<PersonInfo
 									key={p.id}
@@ -251,13 +255,15 @@ const Graph = (props: {
 	let lines: Array<{ x: number; y: number }[]> = []
 
 	props.weightDatas.forEach((val) => {
-		const data = val.map((d) => ({ x: d.date.getDate(), y: d.weight }))
+		const data = val
+			.filter((d) => datesAreOnSameMonth(d.date, props.date))
+			.map((d) => ({ x: d.date.getDate(), y: d.weight }))
 		lines.push(data)
 	})
 
 	return (
 		<FlexibleXYPlot
-			style={{ overflow: 'auto' }}
+			dontCheckIfEmpty
 			yDomain={[0, 100]}
 			xDomain={[1, Math.max(...data.map((item) => item.x))]}
 			height={200}
@@ -306,35 +312,29 @@ const AddLogForm = (props: {
 }) => {
 	const dateDrawer = useDisclosure()
 
-	const [weightData, setWeightData] = useState<Partial<Omit<WeightData, 'id'>>>(
-		{
+	const form = useForm<Omit<WeightData, 'id'>>({
+		defaultValues: {
 			date: new Date(),
-		}
-	)
+		},
+	})
 
-	const invalid = !weightData.weight || !weightData.personId
-
-	const onAddLog = () => {
-		if (!invalid) {
-			props.onAddLog(weightData as Omit<WeightData, 'id'>)
-		}
+	const onSubmit = (data: Omit<WeightData, 'id'>) => {
+		props.onAddLog(data)
 	}
+
 	return (
-		<ModalContent mx={{ base: '4', sm: '0' }}>
+		<ModalContent
+			as='form'
+			onSubmit={form.handleSubmit(onSubmit)}
+			mx={{ base: '4', sm: '0' }}
+		>
 			<ModalHeader>Log Weight</ModalHeader>
 			<ModalCloseButton />
 			<ModalBody>
 				<VStack alignItems='stretch'>
-					<FormControl>
+					<FormControl isInvalid={Boolean(form.formState.errors.personId)}>
 						<Select
-							value={weightData.personId}
-							onChange={(e) => {
-								const val = e.target.value
-								setWeightData((p) => ({
-									...p,
-									personId: val,
-								}))
-							}}
+							{...form.register('personId', { required: true })}
 							placeholder='Select Person'
 						>
 							{props.persons.map((p) => (
@@ -344,18 +344,10 @@ const AddLogForm = (props: {
 							))}
 						</Select>
 					</FormControl>
-					<FormControl>
+					<FormControl isInvalid={Boolean(form.formState.errors.weight)}>
 						<InputGroup>
 							<Input
-								min={1}
-								value={weightData.weight}
-								onChange={(e) => {
-									const val = e.target.value
-									setWeightData((p) => ({
-										...p,
-										weight: val.length === 0 ? undefined : parseInt(val),
-									}))
-								}}
+								{...form.register('weight', { required: true })}
 								placeHolder='Weight'
 								type='number'
 							/>
@@ -363,14 +355,24 @@ const AddLogForm = (props: {
 						</InputGroup>
 					</FormControl>
 					<FormControl>
-						<Flex pl='4' alignItems='center' justifyContent='space-between'>
-							<Flex alignItems='center'>
+						<Input
+							{...form.register('date', { required: true })}
+							type='hidden'
+						/>
+						<Flex alignItems='center' justifyContent='space-between'>
+							<Flex
+								py='2'
+								px='4'
+								rounded='md'
+								alignItems='center'
+								bg={useColorModeValue('gray.100', 'gray.800')}
+							>
 								<Icon mr='2' as={FiCalendar} />
 								<Text>
-									{weightData.date &&
-										datesAreOnSameDay(weightData.date, new Date()) &&
+									{form.getValues('date') &&
+										datesAreOnSameDay(form.getValues('date'), new Date()) &&
 										'Today - '}
-									{weightData.date?.toLocaleDateString()}
+									{form.getValues('date').toLocaleDateString()}
 								</Text>
 							</Flex>
 							<Button colorScheme='blue' onClick={dateDrawer.onOpen}>
@@ -391,10 +393,10 @@ const AddLogForm = (props: {
 										disabledDays={{ before: new Date() }}
 										onDayClick={(day, { disabled }) => {
 											if (!disabled) {
-												setWeightData((p) => ({ ...p, date: day }))
+												form.setValue('date', day)
 											}
 										}}
-										selectedDays={weightData.date}
+										selectedDays={form.watch('date')}
 									/>
 								</DrawerBody>
 							</DrawerContent>
@@ -407,9 +409,7 @@ const AddLogForm = (props: {
 					<Button onClick={props.onClose} variant='ghost'>
 						Cancel
 					</Button>
-					<Button onClick={onAddLog} disabled={invalid}>
-						Add
-					</Button>
+					<Button type='submit'>Add</Button>
 				</HStack>
 			</ModalFooter>
 		</ModalContent>
@@ -420,16 +420,6 @@ const AddPerson = (props: {
 	onAddPerson: (person: Omit<Person, 'id'>) => void
 }) => {
 	const modal = useDisclosure()
-	const [person, setPerson] = useState<Partial<Omit<Person, 'id'>>>({})
-	const invalid = (() => {
-		return !person.goalWeight || !person.goalWeight || !person.initialWeight
-	})()
-
-	const handleAddPerson = () => {
-		if (!invalid) {
-			props.onAddPerson(person as Omit<Person, 'id'>)
-		}
-	}
 
 	return (
 		<>
@@ -441,90 +431,78 @@ const AddPerson = (props: {
 			/>
 			<Modal isCentered isOpen={modal.isOpen} onClose={modal.onClose}>
 				<ModalOverlay />
-				<ModalContent mx={{ base: '4', sm: '0' }}>
-					<ModalHeader>Add Person</ModalHeader>
-					<ModalCloseButton />
-					<ModalBody>
-						<VStack alignItems='stretch'>
-							<FormControl>
-								<Input
-									value={person.name}
-									onChange={(e) => {
-										const val = e.target.value
-										if (val) {
-											setPerson((p) => ({
-												...p,
-												name: val,
-											}))
-										}
-									}}
-									placeHolder='Name'
-								/>
-							</FormControl>
-							<FormControl>
-								<InputGroup>
-									<Input
-										// min={1}
-										value={person.initialWeight}
-										onChange={(e) => {
-											const val = e.target.value
-											setPerson((p) => ({
-												...p,
-												initialWeight:
-													val.length === 0 ? undefined : parseInt(val),
-											}))
-										}}
-										placeHolder='Starting Weight'
-										type='number'
-									/>
-									<InputRightAddon>KG </InputRightAddon>
-								</InputGroup>
-							</FormControl>
-							<FormControl>
-								<InputGroup>
-									<Input
-										value={person.goalWeight}
-										onChange={(e) => {
-											const val = e.target.value
-											setPerson((p) => ({
-												...p,
-												goalWeight:
-													val.length === 0 ? undefined : parseInt(val),
-											}))
-										}}
-										placeHolder='Goal Weight'
-										type='number'
-									/>
-									<InputRightAddon>KG </InputRightAddon>
-								</InputGroup>
-							</FormControl>
-						</VStack>
-					</ModalBody>
-					<ModalFooter>
-						<HStack>
-							<Button onClick={modal.onClose} variant='ghost'>
-								Cancel
-							</Button>
-							<Button disabled={invalid} onClick={handleAddPerson}>
-								Add
-							</Button>
-						</HStack>
-					</ModalFooter>
-				</ModalContent>
+				<AddPersonForm
+					onAddPerson={props.onAddPerson}
+					onClose={modal.onClose}
+				/>
 			</Modal>
 		</>
 	)
 }
 
-const PersonInfo = (props: { person: Person; lastWeight?: WeightData }) => {
-	// const get = (start: number, end: number, current: number) => {
-	// 	if (start < end) {
-	// 		return start - end
-	// 	}
-	// }
-
+const AddPersonForm = (props: {
+	onAddPerson: (person: Omit<Person, 'id'>) => void
+	onClose: () => void
+}) => {
+	const form = useForm<Omit<Person, 'id'>>()
+	const onSubmit = (person: Omit<Person, 'id'>) => {
+		props.onAddPerson(person)
+	}
 	return (
-		<Flex flexDir='column'>
+		<ModalContent
+			as={'form'}
+			onSubmit={form.handleSubmit(onSubmit)}
+			mx={{ base: '4', sm: '0' }}
+		>
+			<ModalHeader>Add Person</ModalHeader>
+			<ModalCloseButton />
+			<ModalBody>
+				<VStack alignItems='stretch'>
+					<FormControl isInvalid={Boolean(form.formState.errors.name)}>
+						<InputGroup>
+							<Input
+								{...form.register('name', { required: true })}
+								placeHolder='Name'
+							/>
+						</InputGroup>
+					</FormControl>
+					<FormControl isInvalid={Boolean(form.formState.errors.initialWeight)}>
+						<InputGroup>
+							<Input
+								{...form.register('initialWeight', { required: true })}
+								placeholder='Starting Weight'
+								type='number'
+							/>
+							<InputRightAddon>KG </InputRightAddon>
+						</InputGroup>
+					</FormControl>
+					<FormControl isInvalid={Boolean(form.formState.errors.goalWeight)}>
+						<InputGroup>
+							<Input
+								{...form.register('goalWeight', { required: true })}
+								placeholder='Goal Weight'
+								type='number'
+							/>
+							<InputRightAddon>KG </InputRightAddon>
+						</InputGroup>
+					</FormControl>
+				</VStack>
+			</ModalBody>
+			<ModalFooter>
+				<HStack>
+					<Button onClick={props.onClose} variant='ghost'>
+						Cancel
+					</Button>
+					<Button type='submit'>Add</Button>
+				</HStack>
+			</ModalFooter>
+		</ModalContent>
+	)
+}
+
+const PersonInfo = (props: { person: Person; lastWeight?: WeightData }) => {
+	return (
+		<Flex flexDir='column' p='3' rounded='md' borderWidth='1px'>
 			<Flex mb='3' alignItems='center'>
 				<HStack spacing='2' alignItems='center'>
 					<Icon as={FiUser} />
@@ -575,6 +553,10 @@ const datesAreOnSameDay = (first: Date, second: Date) =>
 	first.getFullYear() === second.getFullYear() &&
 	first.getMonth() === second.getMonth() &&
 	first.getDate() === second.getDate()
+
+const datesAreOnSameMonth = (first: Date, second: Date) =>
+	first.getFullYear() === second.getFullYear() &&
+	first.getMonth() === second.getMonth()
 
 function daysInMonth(month: number, year: number) {
 	const date = new Date(year, month, 1)
