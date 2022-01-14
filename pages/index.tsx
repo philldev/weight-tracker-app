@@ -25,13 +25,6 @@ import {
 	ModalFooter,
 	ModalHeader,
 	ModalOverlay,
-	Popover,
-	PopoverArrow,
-	PopoverBody,
-	PopoverCloseButton,
-	PopoverContent,
-	PopoverHeader,
-	PopoverTrigger,
 	Progress,
 	Select,
 	Text,
@@ -40,13 +33,15 @@ import {
 	useDisclosure,
 	VStack,
 } from '@chakra-ui/react'
+import { nanoid } from 'nanoid'
 import { useState } from 'react'
+import DayPicker from 'react-day-picker'
+import 'react-day-picker/lib/style.css'
 import {
 	FiCalendar,
 	FiChevronLeft,
 	FiChevronRight,
 	FiMoon,
-	FiPlus,
 	FiUser,
 	FiUserPlus,
 } from 'react-icons/fi'
@@ -58,8 +53,6 @@ import {
 	YAxis,
 } from 'react-vis'
 import 'react-vis/dist/style.css'
-import DayPicker from 'react-day-picker'
-import 'react-day-picker/lib/style.css'
 
 type WeightData = {
 	id: string
@@ -77,6 +70,7 @@ type Person = {
 type State = {
 	date: Date
 	persons: Person[]
+	weightDatas: Map<string, WeightData[]>
 }
 
 const Home = () => {
@@ -85,7 +79,38 @@ const Home = () => {
 	const [state, setState] = useState<State>({
 		date: new Date(),
 		persons: [],
+		weightDatas: new Map(),
 	})
+
+	const addPerson = (person: Person) => {
+		setState((p) => ({
+			...p,
+			persons: [...p.persons, person],
+		}))
+	}
+
+	const addPersonWeight = (weightData: WeightData) => {
+		setState((p) => {
+			let newMap = new Map(p.weightDatas)
+			let datas = newMap.has(weightData.personId)
+				? newMap.get(weightData.personId)!
+				: []
+
+			let dataExist = datas.some((d) =>
+				datesAreOnSameDay(d.date, weightData.date)
+			)
+
+			let newDatas = dataExist
+				? datas.map((d) =>
+						datesAreOnSameDay(d.date, weightData.date) ? weightData : d
+				  )
+				: [...datas, weightData]
+
+			newMap.set(weightData.personId, newDatas)
+
+			return { ...p, weightDatas: newMap }
+		})
+	}
 
 	const onNextMonthClick = () => {
 		setState((p) => {
@@ -134,18 +159,41 @@ const Home = () => {
 							{...{ onNextMonthClick, onPrevMonthClick }}
 							date={state.date}
 						/>
-						<Graph date={state.date} />
-						<AddLogWeight persons={state.persons} onAddLog={() => {}} />
+						<Graph date={state.date} weightDatas={state.weightDatas} />
+						<AddLogWeight
+							persons={state.persons}
+							onAddLog={(weightData) => {
+								addPersonWeight({
+									...weightData,
+									id: nanoid(),
+								})
+							}}
+						/>
 					</MyBox>
 					<MyBox>
 						<HStack mb='4'>
 							<Text fontWeight={'bold'} fontSize='lg'>
 								Persons
 							</Text>
-							<AddPerson onAddPerson={() => {}} />
+							<AddPerson
+								onAddPerson={(person) => {
+									const newPerson: Person = {
+										...person,
+										id: nanoid(),
+									}
+
+									addPerson(newPerson)
+								}}
+							/>
 						</HStack>
 						<VStack alignItems='stretch'>
-							<PersonInfo />
+							{state.persons.map((p) => (
+								<PersonInfo
+									key={p.id}
+									person={p}
+									lastWeight={getPersonLastWeight(p, state.weightDatas)}
+								/>
+							))}
 						</VStack>
 					</MyBox>
 				</VStack>
@@ -189,11 +237,23 @@ const DateNav = (props: {
 	)
 }
 
-const Graph = (props: { date: Date }) => {
+const Graph = (props: {
+	date: Date
+	weightDatas: Map<string, WeightData[]>
+}) => {
 	const data: { x: number; y: number | null }[] = daysInMonth(
 		props.date.getMonth(),
 		props.date.getFullYear()
 	).map((date) => ({ x: date.getDate(), y: null }))
+
+	console.log(props.weightDatas)
+
+	let lines: Array<{ x: number; y: number }[]> = []
+
+	props.weightDatas.forEach((val) => {
+		const data = val.map((d) => ({ x: d.date.getDate(), y: d.weight }))
+		lines.push(data)
+	})
 
 	return (
 		<FlexibleXYPlot
@@ -205,151 +265,154 @@ const Graph = (props: { date: Date }) => {
 			<HorizontalGridLines />
 			<YAxis hideLine />
 			<XAxis hideLine />
-			<LineSeries
-				style={{ fill: 'none' }}
-				getNull={(d) => d.y !== null}
-				curve='curveMonotoneX'
-				data={data}
-			/>
+			{lines.map((line, idx) => (
+				<LineSeries
+					style={{ fill: 'none' }}
+					getNull={(d) => d.y !== null}
+					curve='curveMonotoneX'
+					data={line}
+					key={idx}
+				/>
+			))}
 		</FlexibleXYPlot>
 	)
 }
 
 const AddLogWeight = (props: {
 	persons: Person[]
-	onAddLog: (data: WeightData) => void
+	onAddLog: (data: Omit<WeightData, 'id'>) => void
 }) => {
-	const logWeightModal = useDisclosure()
-	const dateDrawer = useDisclosure()
-
-	const [weightData, setWeightData] = useState<Partial<WeightData>>({
-		date: new Date(),
-	})
-
-	const invalid = !weightData.weight || !weightData.personId
-
-	const onAddLog = () => {
-		console.log(weightData)
-	}
+	const modal = useDisclosure()
 
 	return (
 		<>
 			<Flex justifyContent='center'>
-				<Button
-					size='sm'
-					onClick={logWeightModal.onOpen}
-					colorScheme='facebook'
-				>
+				<Button size='sm' onClick={modal.onOpen} colorScheme='facebook'>
 					Log
 				</Button>
 			</Flex>
-			<Modal
-				isCentered
-				isOpen={logWeightModal.isOpen}
-				onClose={logWeightModal.onClose}
-			>
+			<Modal isCentered isOpen={modal.isOpen} onClose={modal.onClose}>
 				<ModalOverlay />
-				<ModalContent mx={{ base: '4', sm: '0' }}>
-					<ModalHeader>Log Weight</ModalHeader>
-					<ModalCloseButton />
-					<ModalBody>
-						<VStack alignItems='stretch'>
-							<FormControl>
-								<Select
-									value={weightData.personId}
-									onChange={(e) => {
-										const val = e.target.value
-										if (val) {
-											setWeightData((p) => ({
-												...p,
-												personId: val,
-											}))
-										}
-									}}
-									placeholder='Select Person'
-								>
-									{props.persons.map((p) => (
-										<option key={p.id} value={p.id}>
-											{p.name}
-										</option>
-									))}
-								</Select>
-							</FormControl>
-							<FormControl>
-								<InputGroup>
-									<Input
-										min={1}
-										value={weightData.weight}
-										onChange={(e) => {
-											const val = e.target.value
-											if (val) {
-												setWeightData((p) => ({
-													...p,
-													weight: parseInt(val),
-												}))
-											}
-										}}
-										placeHolder='Weight'
-										type='number'
-									/>
-									<InputRightAddon>KG </InputRightAddon>
-								</InputGroup>
-							</FormControl>
-							<FormControl>
-								<Flex pl='4' alignItems='center' justifyContent='space-between'>
-									<Flex alignItems='center'>
-										<Icon mr='2' as={FiCalendar} />
-										<Text>
-											{weightData.date &&
-												datesAreOnSameDay(weightData.date, new Date()) &&
-												'Today - '}
-											{weightData.date?.toLocaleDateString()}
-										</Text>
-									</Flex>
-									<Button colorScheme='blue' onClick={dateDrawer.onOpen}>
-										Select Date
-									</Button>
-								</Flex>
-								<Drawer
-									placement={'bottom'}
-									onClose={dateDrawer.onClose}
-									isOpen={dateDrawer.isOpen}
-								>
-									<DrawerOverlay />
-									<DrawerContent>
-										<DrawerHeader borderBottomWidth='1px'>
-											Pick Date
-										</DrawerHeader>
-										<DrawerCloseButton />
-										<DrawerBody d='flex' justifyContent='center'>
-											<DayPicker
-												disabledDays={{ before: new Date() }}
-												onDayClick={(day, { disabled }) => {
-													if (!disabled) {
-														setWeightData((p) => ({ ...p, date: day }))
-													}
-												}}
-												selectedDays={weightData.date}
-											/>
-										</DrawerBody>
-									</DrawerContent>
-								</Drawer>
-							</FormControl>
-						</VStack>
-					</ModalBody>
-					<ModalFooter>
-						<HStack>
-							<Button onClick={logWeightModal.onClose} variant='ghost'>
-								Cancel
-							</Button>
-							<Button onClick={onAddLog} disabled={invalid}>
-								Add
-							</Button>
-						</HStack>
-					</ModalFooter>
-				</ModalContent>
+				<AddLogForm onClose={modal.onClose} {...props} />
 			</Modal>
 		</>
+	)
+}
+
+const AddLogForm = (props: {
+	persons: Person[]
+	onAddLog: (data: Omit<WeightData, 'id'>) => void
+	onClose: () => void
+}) => {
+	const dateDrawer = useDisclosure()
+
+	const [weightData, setWeightData] = useState<Partial<Omit<WeightData, 'id'>>>(
+		{
+			date: new Date(),
+		}
+	)
+
+	const invalid = !weightData.weight || !weightData.personId
+
+	const onAddLog = () => {
+		if (!invalid) {
+			props.onAddLog(weightData as Omit<WeightData, 'id'>)
+		}
+	}
+	return (
+		<ModalContent mx={{ base: '4', sm: '0' }}>
+			<ModalHeader>Log Weight</ModalHeader>
+			<ModalCloseButton />
+			<ModalBody>
+				<VStack alignItems='stretch'>
+					<FormControl>
+						<Select
+							value={weightData.personId}
+							onChange={(e) => {
+								const val = e.target.value
+								setWeightData((p) => ({
+									...p,
+									personId: val,
+								}))
+							}}
+							placeholder='Select Person'
+						>
+							{props.persons.map((p) => (
+								<option key={p.id} value={p.id}>
+									{p.name}
+								</option>
+							))}
+						</Select>
+					</FormControl>
+					<FormControl>
+						<InputGroup>
+							<Input
+								min={1}
+								value={weightData.weight}
+								onChange={(e) => {
+									const val = e.target.value
+									setWeightData((p) => ({
+										...p,
+										weight: val.length === 0 ? undefined : parseInt(val),
+									}))
+								}}
+								placeHolder='Weight'
+								type='number'
+							/>
+							<InputRightAddon>KG </InputRightAddon>
+						</InputGroup>
+					</FormControl>
+					<FormControl>
+						<Flex pl='4' alignItems='center' justifyContent='space-between'>
+							<Flex alignItems='center'>
+								<Icon mr='2' as={FiCalendar} />
+								<Text>
+									{weightData.date &&
+										datesAreOnSameDay(weightData.date, new Date()) &&
+										'Today - '}
+									{weightData.date?.toLocaleDateString()}
+								</Text>
+							</Flex>
+							<Button colorScheme='blue' onClick={dateDrawer.onOpen}>
+								Select Date
+							</Button>
+						</Flex>
+						<Drawer
+							placement={'bottom'}
+							onClose={dateDrawer.onClose}
+							isOpen={dateDrawer.isOpen}
+						>
+							<DrawerOverlay />
+							<DrawerContent>
+								<DrawerHeader borderBottomWidth='1px'>Pick Date</DrawerHeader>
+								<DrawerCloseButton />
+								<DrawerBody d='flex' justifyContent='center'>
+									<DayPicker
+										disabledDays={{ before: new Date() }}
+										onDayClick={(day, { disabled }) => {
+											if (!disabled) {
+												setWeightData((p) => ({ ...p, date: day }))
+											}
+										}}
+										selectedDays={weightData.date}
+									/>
+								</DrawerBody>
+							</DrawerContent>
+						</Drawer>
+					</FormControl>
+				</VStack>
+			</ModalBody>
+			<ModalFooter>
+				<HStack>
+					<Button onClick={props.onClose} variant='ghost'>
+						Cancel
+					</Button>
+					<Button onClick={onAddLog} disabled={invalid}>
+						Add
+					</Button>
+				</HStack>
+			</ModalFooter>
+		</ModalContent>
 	)
 }
 
@@ -405,12 +468,11 @@ const AddPerson = (props: {
 										value={person.initialWeight}
 										onChange={(e) => {
 											const val = e.target.value
-											if (val) {
-												setPerson((p) => ({
-													...p,
-													initialWeight: parseInt(val),
-												}))
-											}
+											setPerson((p) => ({
+												...p,
+												initialWeight:
+													val.length === 0 ? undefined : parseInt(val),
+											}))
 										}}
 										placeHolder='Starting Weight'
 										type='number'
@@ -424,12 +486,11 @@ const AddPerson = (props: {
 										value={person.goalWeight}
 										onChange={(e) => {
 											const val = e.target.value
-											if (val) {
-												setPerson((p) => ({
-													...p,
-													goalWeight: parseInt(val),
-												}))
-											}
+											setPerson((p) => ({
+												...p,
+												goalWeight:
+													val.length === 0 ? undefined : parseInt(val),
+											}))
 										}}
 										placeHolder='Goal Weight'
 										type='number'
@@ -455,32 +516,40 @@ const AddPerson = (props: {
 	)
 }
 
-const PersonInfo = () => {
+const PersonInfo = (props: { person: Person; lastWeight?: WeightData }) => {
+	// const get = (start: number, end: number, current: number) => {
+	// 	if (start < end) {
+	// 		return start - end
+	// 	}
+	// }
+
 	return (
 		<Flex flexDir='column'>
 			<Flex mb='3' alignItems='center'>
 				<HStack spacing='2' alignItems='center'>
 					<Icon as={FiUser} />
-					<Text fontWeight='bold'>Deddy</Text>
-					<HStack alignItems='flex-end' spacing='1'>
-						<Text>55 KG</Text>
-						<Text fontSize='xs' color='gray.500'>
-							{new Date().toLocaleDateString()}
-						</Text>
-					</HStack>
+					<Text fontWeight='bold'>{props.person.name}</Text>
+					{props.lastWeight && (
+						<HStack alignItems='flex-end' spacing='1'>
+							<Text>{props.lastWeight.weight} KG</Text>
+							<Text fontSize='xs' color='gray.500'>
+								{props.lastWeight.date.toLocaleDateString()}
+							</Text>
+						</HStack>
+					)}
 				</HStack>
 			</Flex>
 			<Box pos='relative'>
-				<Progress mb='1' value={80} />
+				<Progress mb='1' />
 				<Flex justifyContent='space-between'>
 					<Box>
-						<Text fontWeight='bold'>52 Kg</Text>
+						<Text fontWeight='bold'>{props.person.initialWeight} Kg</Text>
 						<Text color='gray.500' fontSize='sm'>
 							Starting Weight
 						</Text>
 					</Box>
 					<Box textAlign='right'>
-						<Text fontWeight='bold'>60 Kg</Text>
+						<Text fontWeight='bold'>{props.person.goalWeight} Kg</Text>
 						<Text color='gray.500' fontSize='sm'>
 							Goal Weight
 						</Text>
@@ -489,6 +558,17 @@ const PersonInfo = () => {
 			</Box>
 		</Flex>
 	)
+}
+
+const getPersonLastWeight = (
+	person: Person,
+	datas: Map<string, WeightData[]>
+) => {
+	const personData = datas.get(person.id)
+
+	if (!personData || personData.length === 0) return undefined
+
+	return personData[personData.length - 1]
 }
 
 const datesAreOnSameDay = (first: Date, second: Date) =>
