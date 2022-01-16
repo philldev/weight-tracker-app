@@ -28,6 +28,7 @@ import {
 	ModalOverlay,
 	Progress,
 	Select,
+	Tag,
 	Text,
 	useColorMode,
 	useColorModeValue,
@@ -43,18 +44,17 @@ import {
 	FiCalendar,
 	FiChevronLeft,
 	FiChevronRight,
+	FiEdit,
 	FiMoon,
 	FiUser,
 	FiUserPlus,
 } from 'react-icons/fi'
+import { AiOutlineHistory } from 'react-icons/ai'
 import {
-	Crosshair,
 	DiscreteColorLegend,
 	FlexibleXYPlot,
 	Hint,
-	HorizontalGridLines,
 	LineSeries,
-	LineSeriesPoint,
 	XAxis,
 	YAxis,
 } from 'react-vis'
@@ -94,7 +94,21 @@ const Home = () => {
 			persons: [...p.persons, person],
 		}))
 	}
-
+	const editPerson = (person: Person) => {
+		setState((p) => ({
+			...p,
+			persons: p.persons.map((i) => (i.id === person.id ? person : i)),
+		}))
+	}
+	const deletePerson = (person: Person) => {
+		const newWeightDatas = { ...state.weightDatas }
+		delete newWeightDatas[person.id]
+		setState((p) => ({
+			...p,
+			persons: p.persons.filter((i) => i.id !== person.id),
+			weightDatas: newWeightDatas,
+		}))
+	}
 	const addPersonWeight = (weightData: WeightData) => {
 		setState((p) => {
 			let newMap = { ...p.weightDatas }
@@ -202,6 +216,12 @@ const Home = () => {
 									key={p.id}
 									person={p}
 									lastWeight={getPersonLastWeight(p, state.weightDatas)}
+									onEditPerson={(person) => {
+										editPerson(person)
+									}}
+									onDeletePerson={(person) => {
+										deletePerson(person)
+									}}
 								/>
 							))}
 						</VStack>
@@ -288,9 +308,8 @@ const Graph = (props: {
 				y: d.weight,
 			}))
 		lines.push(data)
-		legends.push({ title: person?.name! })
+		legends.push({ title: person?.name ?? 'deleted' })
 	}
-	console.log(values)
 
 	return (
 		<>
@@ -304,6 +323,13 @@ const Graph = (props: {
 				}}
 				onMouseLeave={() => {
 					setShow(false)
+					setValues((p) =>
+						p.map((i, index) => ({
+							...i,
+							x: null,
+							y: null,
+						}))
+					)
 				}}
 			>
 				<YAxis hideLine />
@@ -329,13 +355,16 @@ const Graph = (props: {
 					/>
 				))}
 				{show &&
-					values.map((value, idx) => (
-						<Hint value={value} key={idx}>
-							<Text fontSize='sm'>
-								{value.person}:{value.y}Kg
-							</Text>
-						</Hint>
-					))}
+					values.map(
+						(value, idx) =>
+							value.x && (
+								<Hint value={value} key={idx}>
+									<Text fontSize='sm'>
+										{value.person}:{value.y}Kg
+									</Text>
+								</Hint>
+							)
+					)}
 			</FlexibleXYPlot>
 			<DiscreteColorLegend items={legends} />
 		</>
@@ -501,6 +530,113 @@ const AddPerson = (props: {
 	)
 }
 
+const EditPerson = (props: {
+	onEditPerson: (person: Person) => void
+	onDeletePerson: (person: Person) => void
+	person: Person
+}) => {
+	const modal = useDisclosure()
+
+	return (
+		<>
+			<IconButton
+				size='sm'
+				aria-label='Edit'
+				icon={<Icon as={FiEdit} />}
+				variant='ghost'
+				ml='auto'
+				onClick={modal.onOpen}
+			/>
+			<Modal isCentered isOpen={modal.isOpen} onClose={modal.onClose}>
+				<ModalOverlay />
+				<EditPersonForm
+					person={props.person}
+					onEditPerson={props.onEditPerson}
+					onDeletePerson={props.onDeletePerson}
+					onClose={modal.onClose}
+				/>
+			</Modal>
+		</>
+	)
+}
+
+const EditPersonForm = (props: {
+	onEditPerson: (person: Person) => void
+	onDeletePerson: (person: Person) => void
+	onClose: () => void
+	person: Person
+}) => {
+	const form = useForm<Person>({
+		defaultValues: props.person,
+	})
+	const onSubmit = (person: Person) => {
+		props.onEditPerson(person)
+		props.onClose()
+	}
+	return (
+		<ModalContent
+			as={'form'}
+			onSubmit={form.handleSubmit(onSubmit)}
+			mx={{ base: '4', sm: '0' }}
+		>
+			<ModalHeader>Edit Person</ModalHeader>
+			<ModalCloseButton />
+			<ModalBody>
+				<VStack alignItems='stretch'>
+					<FormControl isInvalid={Boolean(form.formState.errors.name)}>
+						<InputGroup>
+							<Input
+								{...form.register('name', { required: true })}
+								placeholder='Name'
+							/>
+						</InputGroup>
+					</FormControl>
+					<FormControl isInvalid={Boolean(form.formState.errors.initialWeight)}>
+						<InputGroup>
+							<Input
+								{...form.register('initialWeight', { required: true })}
+								placeholder='Starting Weight'
+								type='number'
+							/>
+							<InputRightAddon>KG </InputRightAddon>
+						</InputGroup>
+					</FormControl>
+					<FormControl isInvalid={Boolean(form.formState.errors.goalWeight)}>
+						<InputGroup>
+							<Input
+								{...form.register('goalWeight', { required: true })}
+								placeholder='Goal Weight'
+								type='number'
+							/>
+							<InputRightAddon>KG </InputRightAddon>
+						</InputGroup>
+					</FormControl>
+					<FormControl>
+						<Button
+							onClick={() => {
+								props.onDeletePerson(props.person)
+								props.onClose()
+							}}
+							colorScheme='red'
+							variant='outline'
+						>
+							Delete
+						</Button>
+					</FormControl>
+				</VStack>
+			</ModalBody>
+			<ModalFooter>
+				<HStack>
+					<Button onClick={props.onClose} variant='ghost'>
+						Cancel
+					</Button>
+					<Button type='submit'>Edit</Button>
+				</HStack>
+			</ModalFooter>
+		</ModalContent>
+	)
+}
+
 const AddPersonForm = (props: {
 	onAddPerson: (person: Omit<Person, 'id'>) => void
 	onClose: () => void
@@ -562,7 +698,12 @@ const AddPersonForm = (props: {
 	)
 }
 
-const PersonInfo = (props: { person: Person; lastWeight?: WeightData }) => {
+const PersonInfo = (props: {
+	person: Person
+	lastWeight?: WeightData
+	onDeletePerson: (person: Person) => void
+	onEditPerson: (person: Person) => void
+}) => {
 	const getProgress = () => {
 		if (
 			!props.lastWeight ||
@@ -586,14 +727,23 @@ const PersonInfo = (props: { person: Person; lastWeight?: WeightData }) => {
 					<Icon as={FiUser} />
 					<Text fontWeight='bold'>{props.person.name}</Text>
 					{props.lastWeight && (
-						<HStack alignItems='flex-end' spacing='1'>
-							<Text>{props.lastWeight.weight} KG</Text>
-							<Text fontSize='xs' color='gray.500'>
+						<Tag
+							fontSize='xs'
+							colorScheme={getProgress() === 100 ? 'green' : 'blue'}
+						>
+							<Icon as={AiOutlineHistory} mr='2' />
+							<Text mr='2'>{props.lastWeight.weight} KG</Text>
+							<Text color='gray.500'>
 								{parseDate(props.lastWeight.date).toLocaleDateString()}
 							</Text>
-						</HStack>
+						</Tag>
 					)}
 				</HStack>
+				<EditPerson
+					person={props.person}
+					onEditPerson={props.onEditPerson}
+					onDeletePerson={props.onDeletePerson}
+				/>
 			</Flex>
 			<Box pos='relative'>
 				<Progress
