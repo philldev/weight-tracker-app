@@ -58,7 +58,7 @@ import 'react-vis/dist/style.css'
 
 type WeightData = {
 	id: string
-	date: Date
+	date: string
 	weight: number
 	personId: string
 }
@@ -70,18 +70,18 @@ type Person = {
 }
 
 type State = {
-	date: Date
+	date: string
 	persons: Person[]
-	weightDatas: Map<string, WeightData[]>
+	weightDatas: Record<string, WeightData[]>
 }
 
 const Home = () => {
 	const { toggleColorMode } = useColorMode()
 
-	const [state, setState] = useState<State>({
-		date: new Date(),
+	const [state, setState] = useLocalStorage<State>('state', {
+		date: new Date().toDateString(),
 		persons: [],
-		weightDatas: new Map(),
+		weightDatas: {},
 	})
 
 	const addPerson = (person: Person) => {
@@ -93,22 +93,22 @@ const Home = () => {
 
 	const addPersonWeight = (weightData: WeightData) => {
 		setState((p) => {
-			let newMap = new Map(p.weightDatas)
-			let datas = newMap.has(weightData.personId)
-				? newMap.get(weightData.personId)!
-				: []
+			let newMap = { ...p.weightDatas }
+			let datas = newMap[weightData.personId] ?? []
 
 			let dataExist = datas.some((d) =>
-				datesAreOnSameDay(d.date, weightData.date)
+				datesAreOnSameDay(parseDate(d.date), parseDate(weightData.date))
 			)
 
 			let newDatas = dataExist
 				? datas.map((d) =>
-						datesAreOnSameDay(d.date, weightData.date) ? weightData : d
+						datesAreOnSameDay(parseDate(d.date), parseDate(weightData.date))
+							? weightData
+							: d
 				  )
 				: [...datas, weightData]
 
-			newMap.set(weightData.personId, newDatas)
+			newMap[weightData.personId] = newDatas
 
 			return { ...p, weightDatas: newMap }
 		})
@@ -117,20 +117,20 @@ const Home = () => {
 	const onNextMonthClick = () => {
 		setState((p) => {
 			const newDate = new Date(p.date)
-			newDate.setMonth(p.date.getMonth() + 1)
+			newDate.setMonth(parseDate(p.date).getMonth() + 1)
 			return {
 				...p,
-				date: newDate,
+				date: newDate.toDateString(),
 			}
 		})
 	}
 	const onPrevMonthClick = () => {
 		setState((p) => {
 			const newDate = new Date(p.date)
-			newDate.setMonth(p.date.getMonth() - 1)
+			newDate.setMonth(parseDate(p.date).getMonth() - 1)
 			return {
 				...p,
-				date: newDate,
+				date: newDate.toDateString(),
 			}
 		})
 	}
@@ -161,7 +161,10 @@ const Home = () => {
 							{...{ onNextMonthClick, onPrevMonthClick }}
 							date={state.date}
 						/>
-						<Graph date={state.date} weightDatas={state.weightDatas} />
+						<Graph
+							date={parseDate(state.date)}
+							weightDatas={state.weightDatas}
+						/>
 						<AddLogWeight
 							persons={state.persons}
 							onAddLog={(weightData) => {
@@ -215,7 +218,7 @@ const MyBox = chakra((props) => (
 ))
 
 const DateNav = (props: {
-	date: Date
+	date: string
 	onNextMonthClick: () => void
 	onPrevMonthClick: () => void
 }) => {
@@ -227,8 +230,8 @@ const DateNav = (props: {
 				icon={<Icon as={FiChevronLeft} />}
 			/>
 			<Text textAlign='center' flex='1'>
-				{props.date.toLocaleDateString('en-US', { month: 'long' })}{' '}
-				{props.date.toLocaleDateString('en-US', { year: 'numeric' })}
+				{parseDate(props.date).toLocaleDateString('en-US', { month: 'long' })}{' '}
+				{parseDate(props.date).toLocaleDateString('en-US', { year: 'numeric' })}
 			</Text>
 			<IconButton
 				onClick={props.onNextMonthClick}
@@ -241,23 +244,22 @@ const DateNav = (props: {
 
 const Graph = (props: {
 	date: Date
-	weightDatas: Map<string, WeightData[]>
+	weightDatas: Record<string, WeightData[]>
 }) => {
 	const data: { x: number; y: number | null }[] = daysInMonth(
 		props.date.getMonth(),
 		props.date.getFullYear()
 	).map((date) => ({ x: date.getDate(), y: null }))
 
-	console.log(props.weightDatas)
-
 	let lines: Array<{ x: number; y: number }[]> = []
 
-	props.weightDatas.forEach((val) => {
+	for (let personId in props.weightDatas) {
+		let val = props.weightDatas[personId]
 		const data = val
-			.filter((d) => datesAreOnSameMonth(d.date, props.date))
-			.map((d) => ({ x: d.date.getDate(), y: d.weight }))
+			.filter((d) => datesAreOnSameMonth(parseDate(d.date), props.date))
+			.map((d) => ({ x: parseDate(d.date).getDate(), y: d.weight }))
 		lines.push(data)
-	})
+	}
 
 	return (
 		<FlexibleXYPlot
@@ -272,7 +274,6 @@ const Graph = (props: {
 			{lines.map((line, idx) => (
 				<LineSeries
 					style={{ fill: 'none' }}
-					getNull={(d) => d.y !== null}
 					curve='curveMonotoneX'
 					data={line}
 					key={idx}
@@ -312,7 +313,7 @@ const AddLogForm = (props: {
 
 	const form = useForm<Omit<WeightData, 'id'>>({
 		defaultValues: {
-			date: new Date(),
+			date: new Date().toLocaleDateString(),
 		},
 	})
 
@@ -346,7 +347,7 @@ const AddLogForm = (props: {
 						<InputGroup>
 							<Input
 								{...form.register('weight', { required: true })}
-								placeHolder='Weight'
+								placeholder='Weight'
 								type='number'
 							/>
 							<InputRightAddon>KG </InputRightAddon>
@@ -368,9 +369,12 @@ const AddLogForm = (props: {
 								<Icon mr='2' as={FiCalendar} />
 								<Text>
 									{form.getValues('date') &&
-										datesAreOnSameDay(form.getValues('date'), new Date()) &&
+										datesAreOnSameDay(
+											parseDate(form.getValues('date')),
+											new Date()
+										) &&
 										'Today - '}
-									{form.getValues('date').toLocaleDateString()}
+									{parseDate(form.getValues('date')).toLocaleDateString()}
 								</Text>
 							</Flex>
 							<Button colorScheme='blue' onClick={dateDrawer.onOpen}>
@@ -391,10 +395,10 @@ const AddLogForm = (props: {
 										disabledDays={{ before: new Date() }}
 										onDayClick={(day, { disabled }) => {
 											if (!disabled) {
-												form.setValue('date', day)
+												form.setValue('date', day.toDateString())
 											}
 										}}
-										selectedDays={form.watch('date')}
+										selectedDays={parseDate(form.watch('date'))}
 									/>
 								</DrawerBody>
 							</DrawerContent>
@@ -445,6 +449,7 @@ const AddPersonForm = (props: {
 	const form = useForm<Omit<Person, 'id'>>()
 	const onSubmit = (person: Omit<Person, 'id'>) => {
 		props.onAddPerson(person)
+		props.onClose()
 	}
 	return (
 		<ModalContent
@@ -460,7 +465,7 @@ const AddPersonForm = (props: {
 						<InputGroup>
 							<Input
 								{...form.register('name', { required: true })}
-								placeHolder='Name'
+								placeholder='Name'
 							/>
 						</InputGroup>
 					</FormControl>
@@ -499,6 +504,22 @@ const AddPersonForm = (props: {
 }
 
 const PersonInfo = (props: { person: Person; lastWeight?: WeightData }) => {
+	const getProgress = () => {
+		if (
+			!props.lastWeight ||
+			(props.person.initialWeight < props.person.goalWeight &&
+				props.lastWeight.weight < props.person.initialWeight) ||
+			(props.person.initialWeight > props.person.goalWeight &&
+				props.lastWeight.weight > props.person.initialWeight)
+		)
+			return 0
+		const diff = props.person.goalWeight - props.person.initialWeight
+		const progressPercentage = Math.abs(100 / diff)
+		const currentDiff = props.lastWeight.weight - props.person.initialWeight
+		const progress = progressPercentage * Math.abs(currentDiff)
+		return progress
+	}
+
 	return (
 		<Flex flexDir='column' p='3' rounded='md' borderWidth='1px'>
 			<Flex mb='3' alignItems='center'>
@@ -509,14 +530,14 @@ const PersonInfo = (props: { person: Person; lastWeight?: WeightData }) => {
 						<HStack alignItems='flex-end' spacing='1'>
 							<Text>{props.lastWeight.weight} KG</Text>
 							<Text fontSize='xs' color='gray.500'>
-								{props.lastWeight.date.toLocaleDateString()}
+								{parseDate(props.lastWeight.date).toLocaleDateString()}
 							</Text>
 						</HStack>
 					)}
 				</HStack>
 			</Flex>
 			<Box pos='relative'>
-				<Progress mb='1' />
+				<Progress mb='1' value={getProgress()} />
 				<Flex justifyContent='space-between'>
 					<Box>
 						<Text fontWeight='bold'>{props.person.initialWeight} Kg</Text>
@@ -536,11 +557,49 @@ const PersonInfo = (props: { person: Person; lastWeight?: WeightData }) => {
 	)
 }
 
+const parseDate = (date: string) => {
+	return new Date(date)
+}
+
+function useLocalStorage<T>(key: string, initialValue: T) {
+	// State to store our value
+	// Pass initial state function to useState so logic is only executed once
+	const [storedValue, setStoredValue] = useState<T>(() => {
+		try {
+			// Get from local storage by key
+			const item = window.localStorage.getItem(key)
+			// Parse stored json or if none return initialValue
+			return item ? JSON.parse(item) : initialValue
+		} catch (error) {
+			// If error also return initialValue
+			console.log(error)
+			return initialValue
+		}
+	})
+	// Return a wrapped version of useState's setter function that ...
+	// ... persists the new value to localStorage.
+	const setValue = (value: T | ((val: T) => T)) => {
+		try {
+			// Allow value to be a function so we have same API as useState
+			const valueToStore =
+				value instanceof Function ? value(storedValue) : value
+			// Save state
+			setStoredValue(valueToStore)
+			// Save to local storage
+			window.localStorage.setItem(key, JSON.stringify(valueToStore))
+		} catch (error) {
+			// A more advanced implementation would handle the error case
+			console.log(error)
+		}
+	}
+	return [storedValue, setValue] as const
+}
+
 const getPersonLastWeight = (
 	person: Person,
-	datas: Map<string, WeightData[]>
+	datas: Record<string, WeightData[]>
 ) => {
-	const personData = datas.get(person.id)
+	const personData = datas[person.id]
 
 	if (!personData || personData.length === 0) return undefined
 
