@@ -161,8 +161,15 @@ const Home = () => {
 			minH='100vh'
 			overflowX='hidden'
 		>
-			<Flex gap='2' justifyContent={'center'} shadow='md' p='4'>
-				<Heading flex='1'>Weight Tracker App</Heading>
+			<Flex
+				overflowX='hidden'
+				gap='2'
+				justifyContent='center'
+				alignItems='center'
+				shadow='md'
+				p='4'
+			>
+				<Text flex='1'>Weight Tracker App</Text>
 				<IconButton
 					aria-label='Dark Mode'
 					onClick={toggleColorMode}
