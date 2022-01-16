@@ -48,6 +48,7 @@ import {
 	FiUserPlus,
 } from 'react-icons/fi'
 import {
+	Crosshair,
 	DiscreteColorLegend,
 	FlexibleXYPlot,
 	Hint,
@@ -251,6 +252,24 @@ const Graph = (props: {
 	weightDatas: Record<string, WeightData[]>
 	persons: Person[]
 }) => {
+	const [values, setValues] = useState<
+		{ x: number | null; y: number | null; person?: string }[]
+	>(function () {
+		let result: { x: number | null; y: number | null; person?: string }[] = []
+		for (const personId in props.weightDatas) {
+			if (Object.prototype.hasOwnProperty.call(props.weightDatas, personId)) {
+				result.push({
+					x: null,
+					y: null,
+					person: props.persons.find((p) => p.id === personId)?.name,
+				})
+			}
+		}
+		return result
+	})
+
+	const [show, setShow] = useState(false)
+
 	const data: { x: number; y: number | null }[] = daysInMonth(
 		props.date.getMonth(),
 		props.date.getFullYear()
@@ -271,6 +290,7 @@ const Graph = (props: {
 		lines.push(data)
 		legends.push({ title: person?.name! })
 	}
+	console.log(values)
 
 	return (
 		<>
@@ -279,8 +299,13 @@ const Graph = (props: {
 				yDomain={[0, 100]}
 				xDomain={[1, Math.max(...data.map((item) => item.x))]}
 				height={200}
+				onMouseEnter={() => {
+					setShow(true)
+				}}
+				onMouseLeave={() => {
+					setShow(false)
+				}}
 			>
-				<HorizontalGridLines />
 				<YAxis hideLine />
 				<XAxis hideLine />
 				{lines.map((line, idx) => (
@@ -289,11 +314,28 @@ const Graph = (props: {
 						curve='curveMonotoneX'
 						data={line}
 						key={idx}
-						onNearestXY={(e) => {
-							console.log(idx, e)
+						onNearestX={(val) => {
+							setValues((p) =>
+								p.map((i, index) =>
+									index === idx
+										? {
+												...i,
+												...val,
+										  }
+										: i
+								)
+							)
 						}}
-					></LineSeries>
+					/>
 				))}
+				{show &&
+					values.map((value, idx) => (
+						<Hint value={value} key={idx}>
+							<Text fontSize='sm'>
+								{value.person}:{value.y}Kg
+							</Text>
+						</Hint>
+					))}
 			</FlexibleXYPlot>
 			<DiscreteColorLegend items={legends} />
 		</>
