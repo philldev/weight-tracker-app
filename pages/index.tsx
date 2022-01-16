@@ -48,9 +48,12 @@ import {
 	FiUserPlus,
 } from 'react-icons/fi'
 import {
+	DiscreteColorLegend,
 	FlexibleXYPlot,
+	Hint,
 	HorizontalGridLines,
 	LineSeries,
+	LineSeriesPoint,
 	XAxis,
 	YAxis,
 } from 'react-vis'
@@ -164,6 +167,7 @@ const Home = () => {
 						<Graph
 							date={parseDate(state.date)}
 							weightDatas={state.weightDatas}
+							persons={state.persons}
 						/>
 						<AddLogWeight
 							persons={state.persons}
@@ -245,6 +249,7 @@ const DateNav = (props: {
 const Graph = (props: {
 	date: Date
 	weightDatas: Record<string, WeightData[]>
+	persons: Person[]
 }) => {
 	const data: { x: number; y: number | null }[] = daysInMonth(
 		props.date.getMonth(),
@@ -252,34 +257,46 @@ const Graph = (props: {
 	).map((date) => ({ x: date.getDate(), y: null }))
 
 	let lines: Array<{ x: number; y: number }[]> = []
+	let legends: Array<{ title: string }> = []
 
 	for (let personId in props.weightDatas) {
 		let val = props.weightDatas[personId]
+		let person = props.persons.find((p) => p.id === personId)
 		const data = val
 			.filter((d) => datesAreOnSameMonth(parseDate(d.date), props.date))
-			.map((d) => ({ x: parseDate(d.date).getDate(), y: d.weight }))
+			.map((d) => ({
+				x: parseDate(d.date).getDate(),
+				y: d.weight,
+			}))
 		lines.push(data)
+		legends.push({ title: person?.name! })
 	}
 
 	return (
-		<FlexibleXYPlot
-			dontCheckIfEmpty
-			yDomain={[0, 100]}
-			xDomain={[1, Math.max(...data.map((item) => item.x))]}
-			height={200}
-		>
-			<HorizontalGridLines />
-			<YAxis hideLine />
-			<XAxis hideLine />
-			{lines.map((line, idx) => (
-				<LineSeries
-					style={{ fill: 'none' }}
-					curve='curveMonotoneX'
-					data={line}
-					key={idx}
-				/>
-			))}
-		</FlexibleXYPlot>
+		<>
+			<FlexibleXYPlot
+				dontCheckIfEmpty
+				yDomain={[0, 100]}
+				xDomain={[1, Math.max(...data.map((item) => item.x))]}
+				height={200}
+			>
+				<HorizontalGridLines />
+				<YAxis hideLine />
+				<XAxis hideLine />
+				{lines.map((line, idx) => (
+					<LineSeries
+						style={{ fill: 'none' }}
+						curve='curveMonotoneX'
+						data={line}
+						key={idx}
+						onNearestXY={(e) => {
+							console.log(idx, e)
+						}}
+					></LineSeries>
+				))}
+			</FlexibleXYPlot>
+			<DiscreteColorLegend items={legends} />
+		</>
 	)
 }
 
@@ -537,7 +554,11 @@ const PersonInfo = (props: { person: Person; lastWeight?: WeightData }) => {
 				</HStack>
 			</Flex>
 			<Box pos='relative'>
-				<Progress mb='1' value={getProgress()} />
+				<Progress
+					mb='1'
+					value={getProgress()}
+					colorScheme={getProgress() === 100 ? 'green' : undefined}
+				/>
 				<Flex justifyContent='space-between'>
 					<Box>
 						<Text fontWeight='bold'>{props.person.initialWeight} Kg</Text>
